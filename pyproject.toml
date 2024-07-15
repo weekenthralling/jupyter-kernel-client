@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "jupyter_kernel_client"
+name = "jkclient"
 dynamic = ["version"]
-description = ''
+description = "Kubernetes Jupyter Kernel CRD Client"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "Apache-2.0"
 keywords = []
 authors = [
-  { name = "Mo Zhou", email = "zc@zjuici.com" },
+  { name = "Mo Zhou", email = "weekenthralling@gmail.com" },
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -27,4 +27,41 @@ classifiers = [
 dependencies = [
   "kubernetes>=30",
   "pydantic>=2",
+]
+
+[project.urls]
+Documentation = "https://github.com/weekenthralling/jupyter-kernel-client#readme"
+Issues = "https://github.com/weekenthralling/jupyter-kernel-client/issues"
+Source = "https://github.com/weekenthralling/jupyter-kernel-client"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/jkclient"]
+
+[tool.hatch.version]
+path = "src/jkclient/__about__.py"
+
+[tool.hatch.envs.types]
+extra-dependencies = [
+  "mypy>=1.0.0",
+]
+[tool.hatch.envs.types.scripts]
+check = "mypy --install-types --non-interactive {args:src/jkclient tests}"
+
+[tool.coverage.run]
+source_pkgs = ["jkclient", "tests"]
+branch = true
+parallel = true
+omit = [
+  "src/jkclient/__about__.py",
+]
+
+[tool.coverage.paths]
+jkclient = ["src/jkclient", "*/jupyter-kernel-client/src/jkclient"]
+tests = ["tests", "*/jupyter-kernel-client/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
 ]

@@ -1,50 +1,56 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
-import json
+from http import HTTPStatus
 from uuid import uuid4
-from kubernetes import config, client, watch
+
+from kubernetes import client, config, watch
 from kubernetes.client import (
-    V1ObjectMeta,
-    V1PodTemplateSpec,
-    V1PodSpec,
+    ApiException,
     V1Container,
-    V1VolumeMount,
-    V1Volume,
     V1EnvVar,
+    V1ObjectMeta,
+    V1PodSpec,
+    V1PodTemplateSpec,
+    V1Volume,
+    V1VolumeMount,
 )
-from jupyter_kernel_client.models import (
-    V1Kernel,
-    V1KernelSpec,
-)
-from jupyter_kernel_client.schema import CreateKernelRequest, Kernel as KernelSchema
+
+from jkclient.models import V1Kernel, V1KernelSpec
+from jkclient.schema import CreateKernelRequest
+from jkclient.schema import Kernel as KernelSchema
 
 logger = logging.getLogger(__name__)
 
+KERNEL_ID = "jupyter.org/kernel-id"
+KERNEL_CONNECTION = "jupyter.org/kernel-connection-info"
+
 
 class JupyterKernelClient:
-
     def __init__(
         self,
         group: str = "jupyter.org",
         version: str = "v1",
         kind: str = "Kernel",
         plural: str = "kernels",
-        incluster: bool = True,
+        incluster: bool = True,  # noqa: FBT001, FBT002
+        timeout: int = 60,
     ) -> None:
         if incluster:
             config.load_incluster_config()
         else:
             config.load_kube_config()
 
-        self.api_instance = client.CustomObjectsApi()
-
         self.kind = kind
         self.plural = plural
         self.group = group
         self.version = version
+        self.timeout = timeout
+
         self.api_version = f"{group}/{version}"
+        self.api_instance = client.CustomObjectsApi()
 
     def create(self, request: CreateKernelRequest) -> KernelSchema | None:
         """Create kernel resource
@@ -56,7 +62,7 @@ class JupyterKernelClient:
             KernelSchema: kernel connection info
         """
         env = request.env
-        logger.debug(f"Create kernel from env: {env}")
+        logger.debug("Create kernel from env: %s", env)
 
         kernel_id = env.get("KERNEL_ID", uuid4().hex)
         kernel_name = request.name or f"jovyan-{uuid4().hex}"
@@ -67,7 +73,7 @@ class JupyterKernelClient:
         kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", None)
         if kernel_volume_mounts and isinstance(kernel_volume_mounts, list):
             volume_mounts = [
-                V1VolumeMount(**volume_mount) for volume_mount in volume_mounts
+                V1VolumeMount(**volume_mount) for volume_mount in kernel_volume_mounts
             ]
 
         # Set kernel volumes
@@ -87,7 +93,6 @@ class JupyterKernelClient:
             metadata=V1ObjectMeta(
                 name=kernel_name,
                 namespace=kernel_namespace,
-                labels={"kernel-id": kernel_id},
             ),
             spec=V1KernelSpec(
                 template=V1PodTemplateSpec(
@@ -107,25 +112,41 @@ class JupyterKernelClient:
             ),
         )
 
-        response = self.api_instance.create_namespaced_custom_object(
-            group=self.group,
-            version=self.version,
-            namespace=kernel_namespace,
-            plural=self.plural,
-            body=kernel,
-        )
-        logger.debug(f"Create response: {response}")
+        try:
+            response = self.api_instance.create_namespaced_custom_object(
+                group=self.group,
+                version=self.version,
+                namespace=kernel_namespace,
+                plural=self.plural,
+                body=kernel,
+            )
+            logger.debug("Create response: %s", response)
+        except ApiException as e:
+            if e.status == HTTPStatus.CONFLICT.value:
+                logger.debug("kernel %s already exists", kernel_name)
+                return self.get(name=kernel_name, namespace=kernel_namespace)
 
-        return KernelSchema(
-            kernel_id=kernel_id,
-            name=kernel_name,
-            conn_info={},
-        )
+            error_msg = f"Error create kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg) from None
 
-    def _wait_for_kernel_creation(self, name, namespace, timeout=60):
+        # Get kernel connection info from kernel label
+        resource = self._wait_for_kernel_ready(
+            name=kernel_name, namespace=kernel_namespace
+        )
+        if resource and (
+            conn_info := resource["metadata"]["annotations"].get(KERNEL_CONNECTION)
+        ):
+            return KernelSchema(
+                kernel_id=kernel_id, name=kernel_name, conn_info=json.loads(conn_info)
+            )
+
+        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
+        raise RuntimeError(error_msg) from None
+
+    def _wait_for_kernel_ready(self, name, namespace, timeout=60):
         w = watch.Watch()
         start_time = time.time()
-        logger.debug(f"Waiting for kernel {name} to be created")
+        logger.debug("Waiting for kernel %s to be created", name)
         for event in w.stream(
             self.api_instance.list_namespaced_custom_object,
             group=self.group,
@@ -134,15 +155,29 @@ class JupyterKernelClient:
             plural=self.plural,
             timeout_seconds=timeout,
         ):
-            if event["type"] == "ADDED" or event["type"] == "MODIFIED":
-                if event["object"]["metadata"]["name"] == name:
-                    logger.debug(f"Kernel {name} created with event: {event}")
-                    w.stop()
-                    return event["object"]
+            if event["type"] == "ADDED" or event["type"] == "MODIFIED":  # noqa: SIM102
+                if event["object"]["metadata"]["name"] == name and event["object"].get(
+                    "status"
+                ):
+                    logger.debug("Kernel %s created with event: %s", name, namespace)
+                    conditions = event["object"]["status"].get("conditions", [])
+                    available_condition = next(
+                        (c for c in conditions if c.get("type", None) == "Ready"), None
+                    )
+                    if (
+                        available_condition
+                        and available_condition.get("status", None) == "True"
+                    ):
+                        w.stop()
+                        return event["object"]
             if time.time() - start_time > timeout:
-                logger.error(f"Timeout waiting for kernel {name} to be created")
+                logger.warning(
+                    "Timeout waiting for kernel %s to be ready, delete it", name
+                )
+                self.delete(name=name, namespace=namespace)
                 w.stop()
                 return None
+        return None
 
     def get(self, name: str, namespace: str = "default") -> KernelSchema | None:
         """Get kernel connection info by name and namespace
@@ -163,13 +198,18 @@ class JupyterKernelClient:
                 plural=self.plural,
                 name=name,
             )
-        except Exception as e:
-            logger.error(f"Failed get kernel {name} namespace: {namespace}", e)
-            return None
+        except ApiException as e:
+            if e.status == HTTPStatus.NOT_FOUND.value:
+                return None
+
+            error_msg = f"Error get kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg) from None
+
+        # TODO: Check kernel if ready
 
         # Get kernel connection info from kernel label
-        kernel_id = kernel["metadata"]["labels"].get("kernel-id", "")
-        conn_info = kernel["metadata"]["labels"].get("kernel-conn-info", None)
+        kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
+        conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
 
         return KernelSchema(
             name=name,
@@ -184,10 +224,18 @@ class JupyterKernelClient:
             name (str): kernel name
             namespace (str, optional): kernel namespace. Defaults to "default".
         """
-        self.api_instance.delete_namespaced_custom_object(
-            group=self.group,
-            version=self.version,
-            namespace=namespace,
-            plural=self.plural,
-            name=name,
-        )
+        try:
+            self.api_instance.delete_namespaced_custom_object(
+                group=self.group,
+                version=self.version,
+                namespace=namespace,
+                plural=self.plural,
+                name=name,
+            )
+        except ApiException as e:
+            if e.status == HTTPStatus.NOT_FOUND.value:
+                logger.warning("Kernel %s not found", name)
+                return
+
+            error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg) from None

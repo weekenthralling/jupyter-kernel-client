@@ -1,11 +1,9 @@
 import pytest
 
-from jupyter_kernel_client.models import V1Kernel, V1KernelSpec
+from jkclient import V1Kernel
 
 
 def test_kernel_model() -> None:
-    from kubernetes.client.models import V1ObjectMeta
-
     kernel = {
         "api_version": "jupyter.org/v1beta1",
         "kind": "Kernel",
@@ -34,7 +32,7 @@ def test_kernel_model() -> None:
                             "image": "weekenthralling/kernel-py:133fbe3",
                             "name": "kernel",
                             "volumeMounts": [
-                                {"mountPath": "/mnt/shared", "name": "shared-vol"}
+                                {"mountPath": "/mnt/shared", "name": "shared-vol"},
                             ],
                         }
                     ],

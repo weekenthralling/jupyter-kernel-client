@@ -1,11 +1,11 @@
-import pytest
-
 from uuid import uuid4
 
-from jupyter_kernel_client.schema import CreateKernelRequest
-from jupyter_kernel_client.client import JupyterKernelClient
+import pytest
+
+from jkclient import CreateKernelRequest, JupyterKernelClient
 
 
+@pytest.mark.skip(reason="Create kernel with kubernetes config")
 def test_create_kernel() -> None:
     client = JupyterKernelClient(incluster=False)
 
@@ -13,13 +13,13 @@ def test_create_kernel() -> None:
         name="foo-0",
         env={
             "KERNEL_ID": uuid4().hex,
-            "KERNEL_NAME": f"kernel-{uuid4().hex}",
+            "KERNEL_NAME": f"jovyan-{uuid4().hex}",
             "KERNEL_USERNAME": "jovyan",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",
             "KERNEL_WORKING_DIR": "/mnt/data",
             "KERNEL_VOLUME_MOUNTS": [
-                {"name": "shared-vol", "mountPath": "/mnt/data"},
+                {"name": "shared-vol", "mount_path": "/mnt/data"},
             ],
             "KERNEL_VOLUMES": [
                 {
@@ -35,6 +35,7 @@ def test_create_kernel() -> None:
     assert response is not None
 
 
+@pytest.mark.skip(reason="Get kernel with kubernetes config")
 def test_get_kernel() -> None:
     client = JupyterKernelClient(incluster=False)
     kernel = client.get(name="foo-0", namespace="default")
@@ -42,6 +43,7 @@ def test_get_kernel() -> None:
     assert kernel is not None
 
 
+@pytest.mark.skip(reason="Get kernel with kubernetes config")
 def test_get_kernel_none() -> None:
     client = JupyterKernelClient(incluster=False)
     kernel = client.get(name="foo-1")
@@ -49,6 +51,7 @@ def test_get_kernel_none() -> None:
     assert kernel is None
 
 
+@pytest.mark.skip(reason="Delete kernel with kubernetes config")
 def test_delete_kernel() -> None:
     client = JupyterKernelClient(incluster=False)
     client.delete(name="foo-1", namespace="default")

@@ -1,7 +1,8 @@
+from uuid import uuid4
+
 import pytest
 
-from uuid import uuid4
-from jupyter_kernel_client.schema import CreateKernelRequest
+from jkclient import CreateKernelRequest
 
 
 def test_create_kernel_request() -> None:
@@ -21,8 +22,8 @@ def test_create_kernel_request_env() -> None:
         "KERNEL_IMAGE": "weekenthralling/kernel-py:0.0.1",
         "KERNEL_WORKING_DIR": "/mnt/data",
         "KERNEL_VOLUME_MOUNTS": [
-            {"name": "shared-vol", "mountPath": "/mnt/data"},
-            {"name": "ipython-profile-vol", "mountPath": "/opt/startup"},
+            {"name": "shared-vol", "mount_path": "/mnt/data"},
+            {"name": "ipython-profile-vol", "mount_path": "/opt/startup"},
         ],
         "KERNEL_VOLUMES": [
             {
@@ -31,7 +32,7 @@ def test_create_kernel_request_env() -> None:
             },
             {
                 "name": "ipython-profile-vol",
-                "configMap": {"name": "ipython-startup-scripts"},
+                "config_map": {"name": "ipython-startup-scripts"},
             },
         ],
         "KERNEL_STARTUP_SCRIPTS_PATH": "/opt/startup",
@@ -39,8 +40,6 @@ def test_create_kernel_request_env() -> None:
     request = CreateKernelRequest(name=name, env=env)
     assert request.env is not None
     assert request.env["KERNEL_NAMESPACE"] == "default"
-    assert isinstance(request.env["KERNEL_VOLUME_MOUNTS"], str)
-    assert isinstance(request.env["KERNEL_VOLUMES"], str)
 
 
 if __name__ == "__main__":

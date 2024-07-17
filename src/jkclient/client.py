@@ -65,7 +65,7 @@ class JupyterKernelClient:
         logger.debug("Create kernel from env: %s", env)
 
         kernel_id = env.get("KERNEL_ID", uuid4().hex)
-        kernel_name = request.name or f"jovyan-{uuid4().hex}"
+        kernel_name = request.name or f"jovyan-{kernel_id}"
         kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
 
         # Set kernel volume mounts

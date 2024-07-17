@@ -1,6 +1,6 @@
 # Jupyter-Kernel-Client
 
-The Jupyter Kernel Client provides users with the ability to create, retrieve, and delete Jupyter kernel custom resources in Kubernetes.
+The Jupyter Kernel Client provides you with the ability to create, query, and delete Kubernetes kernel custom resources. It uses the [Jupyter Kernel Controller](https://github.com/weekenthralling/jupyter-kernel-controller) to create the necessary [pod](https://kubernetes.io/docs/concepts/workloads/pods/) and [service](https://kubernetes.io/docs/concepts/services-networking/service/) resources for the kernel custom resources. Finally, you can connect to the created remote kernel using the [jupyter-client](https://github.com/jupyter/jupyter_client).
 
 ## Installation and Basic usage
 

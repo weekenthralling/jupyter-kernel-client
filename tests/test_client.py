@@ -13,7 +13,33 @@ def test_create_kernel() -> None:
         name="foo-0",
         env={
             "KERNEL_ID": uuid4().hex,
-            "KERNEL_NAME": f"jovyan-{uuid4().hex}",
+            "KERNEL_USERNAME": "jovyan",
+            "KERNEL_NAMESPACE": "default",
+            "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",
+            "KERNEL_WORKING_DIR": "/mnt/data",
+            "KERNEL_VOLUME_MOUNTS": [
+                {"name": "shared-vol", "mount_path": "/mnt/data"},
+            ],
+            "KERNEL_VOLUMES": [
+                {
+                    "name": "shared-vol",
+                    "nfs": {"server": "10.0.0.29", "path": "/data"},
+                },
+            ],
+            "KERNEL_STARTUP_SCRIPTS_PATH": "/opt/startup",
+            "KERNEL_IDLE_TIMEOUT": "1800",
+        },
+    )
+    response = client.create(request=request)
+    assert response is not None
+
+
+@pytest.mark.skip(reason="Create kernel with kubernetes config")
+def test_create_kernel_without_name() -> None:
+    client = JupyterKernelClient(incluster=False)
+    request = CreateKernelRequest(
+        env={
+            "KERNEL_ID": uuid4().hex,
             "KERNEL_USERNAME": "jovyan",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",

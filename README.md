@@ -16,20 +16,20 @@ pip install jkclient
 **Create kernel**
 
 ```python
+from uuid import uuid4
 from jkclient import CreateKernelRequest, JupyterKernelClient
 
 client = JupyterKernelClient(incluster=False)
 request = CreateKernelRequest(
-    name="foo-0",
+    name="foo",
     env={
-        "KERNEL_ID": uuid4().hex,
-        "KERNEL_NAME": f"jovyan-{uuid4().hex}",
+        "KERNEL_ID": str(uuid4()),
         "KERNEL_USERNAME": "jovyan",
         "KERNEL_NAMESPACE": "default",
-        "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",
+        "KERNEL_IMAGE": "weekenthralling/kernel-py:480d2f5",
         "KERNEL_WORKING_DIR": "/mnt/data",
         "KERNEL_VOLUME_MOUNTS": [
-            {"name": "shared-vol", "mount_path": "/mnt/data"},
+            {"name": "shared-vol", "mountPath": "/mnt/data"},
         ],
         "KERNEL_VOLUMES": [
             {
@@ -49,19 +49,19 @@ client.create(request=request)
 
 ```json
 {
-    "kernel_id" : "0c3931b4-0fc8-4c35-a4db-657e659cc04f",
+    "kernel_id" : "968183bb-13ef-4faf-b7d8-30fe8d20e6a3",
     "kernel_name": "foo-0",
     "conn_info": {
-        "shell_port": 56799,
-        "iopub_port": 56500,
-        "stdin_port": 52665,
-        "control_port": 38703,
-        "hb_port": 35068,
-        "ip": "foo-0.default.svc.cluster.local",
-        "key": "0c3931b4-0fc8-4c35-a4db-657e659cc04f",
+        "shell_port": 52317,
+        "stdin_port": 52321,
+        "iopub_port": 52318,
+        "control_port": 52320,
+        "hb_port": 52319,
+        "ip": "foo.default.svc.cluster.local",
+        "key": "968183bb-13ef-4faf-b7d8-30fe8d20e6a3",
         "transport": "tcp",
         "signature_scheme": "hmac-sha256",
-        "kernel_name": ""
+        "kernel_name": "",
     }
 }
 ```
@@ -75,16 +75,16 @@ from jupyter_client.blocking import BlockingKernelClient
 client = BlockingKernelClient()
 client.load_connection_info(
     info={
-        "shell_port": 56799,
-        "iopub_port": 56500,
-        "stdin_port": 52665,
-        "control_port": 38703,
-        "hb_port": 35068,
-        "ip": "foo-0.default.svc.cluster.local",
-        "key": "0c3931b4-0fc8-4c35-a4db-657e659cc04f",
+        "shell_port": 52317,
+        "stdin_port": 52321,
+        "iopub_port": 52318,
+        "control_port": 52320,
+        "hb_port": 52319,
+        "ip": "foo.default.svc.cluster.local",
+        "key": "968183bb-13ef-4faf-b7d8-30fe8d20e6a3",
         "transport": "tcp",
         "signature_scheme": "hmac-sha256",
-        "kernel_name": ""
+        "kernel_name": "",
     }
 )
 
@@ -112,7 +112,7 @@ while True:
     # Poll the message
     try:
         io_msg_content = client.get_iopub_msg(timeout=30)["content"]
-        logger.info(f"io_msg_content: {io_msg_content}")
+        print(f"io_msg_content: {io_msg_content}")
         if (
             "execution_state" in io_msg_content
             and io_msg_content["execution_state"] == "idle"
@@ -129,7 +129,7 @@ print(f"Got kernel output, shell_msg: {shell_msg} iopub_msg: {iopub_msg}")
 **Get exec code log**
 
 ```console
-Got kernel output, shell_msg: {'header': {'msg_id': 'cf9f0c39-b0fbb1595399f44b68f893ab_9_39', 'msg_type': 'execute_reply', 'username': 'username', 'session': 'cf9f0c39-b0fbb1595399f44b68f893ab', 'date': datetime.datetime(2024, 7, 9, 8, 31, 56, 856558, tzinfo=tzlocal()), 'version': '5.3'}, 'msg_id': 'cf9f0c39-b0fbb1595399f44b68f893ab_9_39', 'msg_type': 'execute_reply', 'parent_header': {'msg_id': 'c65b2c1d-b8dca8ea83672d1f56b1a79d_86_3', 'msg_type': 'execute_request', 'username': 'username', 'session': 'c65b2c1d-b8dca8ea83672d1f56b1a79d', 'date': datetime.datetime(2024, 7, 9, 8, 31, 56, 846349, tzinfo=tzlocal()), 'version': '5.3'}, 'metadata': {'started': '2024-07-09T08:31:56.847191Z', 'dependencies_met': True, 'engine': 'a6d2191d-b438-44f0-a413-d8db6af4cebe', 'status': 'ok'}, 'content': {'status': 'ok', 'execution_count': 8, 'user_expressions': {}, 'payload': []}, 'buffers': []} iopub_msg: {'data': {'text/plain': '4.0'}, 'metadata': {}, 'execution_count': 8}
+Got kernel output, shell_msg: {'header': {'msg_id': 'cf9f0c39-b0fbb1595399f44b68f893ab_9_39', 'msg_type': 'execute_reply', 'username': 'username', 'session': 'cf9f0c39-b0fbb1595399f44b68f893ab', 'date': datetime.datetime(2024, 7, 9, 8, 31, 56, 856558, tzinfo=tzlocal()), 'version': '5.3'}, 'msg_id': 'cf9f0c39-b0fbb1595399f44b68f893ab_9_39', 'msg_type': 'execute_reply', 'parent_header': {'msg_id': 'c65b2c1d-b8dca8ea83672d1f56b1a79d_86_3', 'msg_type': 'execute_request', 'username': 'username', 'session': 'c65b2c1d-b8dca8ea83672d1f56b1a79d', 'date': datetime.datetime(2024, 7, 9, 8, 31, 56, 846349, tzinfo=tzlocal()), 'version': '5.3'}, 'metadata': {'started': '2024-07-09T08:31:56.847191Z', 'dependencies_met': True, 'engine': 'a6d2191d-b438-44f0-a413-d8db6af4cebe', 'status': 'ok'}, 'content': {'status': 'ok', 'execution_count': 8, 'user_expressions': {}, 'payload': []}, 'buffers': []} iopub_msg: {'data': {'text/plain': '4.0'}, 'metadata': {}, 'execution_count': 1}
 ```
 
 ## License

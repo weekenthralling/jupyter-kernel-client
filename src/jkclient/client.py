@@ -8,7 +8,6 @@ import re
 import tempfile
 import time
 from http import HTTPStatus
-from uuid import uuid4
 
 import six
 from dateutil.parser import parse
@@ -75,17 +74,20 @@ class JupyterKernelClient:
         env = request.env
         logger.debug("Create kernel from env: %s", env)
 
-        kernel_id = env.get("KERNEL_ID", uuid4().hex)
+        # Check kernel env
+        if not env.get("KERNEL_IMAGE"):
+            error_msg = "`KERNEL_IMAGE` must be not none"
+            raise ValueError(error_msg)
 
+        if not env.get("KERNEL_ID"):
+            error_msg = "`KERNEL_ID` must be not none"
+            raise ValueError(error_msg)
+
+        kernel_id = env["KERNEL_ID"]
         kernel_user = env.get("KERNEL_USERNAME", "jovyan")
         kernel_name = request.name or f"{kernel_user}-{kernel_id}"
 
         kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
-
-        # Check kernel image not none
-        if not env.get("KERNEL_IMAGE"):
-            error_msg = "`KERNEL_IMAGE` must be not none"
-            raise ValueError(error_msg)
 
         # pop kernel volumes and volume_mounts
         kernel_volumes = env.pop("KERNEL_VOLUMES", [])

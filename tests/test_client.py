@@ -12,7 +12,7 @@ def test_create_kernel() -> None:
     request = CreateKernelRequest(
         name="foo-0",
         env={
-            "KERNEL_ID": uuid4().hex,
+            "KERNEL_ID": str(uuid4()),
             "KERNEL_USERNAME": "jovyan",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",
@@ -39,7 +39,7 @@ def test_create_kernel_without_name() -> None:
     client = JupyterKernelClient(incluster=False)
     request = CreateKernelRequest(
         env={
-            "KERNEL_ID": uuid4().hex,
+            "KERNEL_ID": str(uuid4()),
             "KERNEL_USERNAME": "jovyan",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "weekenthralling/kernel-py:133fbe3",
@@ -66,6 +66,7 @@ def test_create_kernel_with_work_dir() -> None:
     client = JupyterKernelClient(incluster=False)
     request = CreateKernelRequest(
         env={
+            "KERNEL_ID": str(uuid4()),
             "KERNEL_USERNAME": "tablegpt",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "zjuici/tablegpt-kernel:0.1.1",

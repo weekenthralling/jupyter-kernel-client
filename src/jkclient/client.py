@@ -1,24 +1,23 @@
 from __future__ import annotations
 
+import datetime
 import json
 import logging
+import os
+import re
+import tempfile
 import time
 from http import HTTPStatus
 from uuid import uuid4
 
+import six
+from dateutil.parser import parse
+import kubernetes.client.models
 from kubernetes import client, config, watch
-from kubernetes.client import (
-    ApiException,
-    V1Container,
-    V1EnvVar,
-    V1ObjectMeta,
-    V1PodSpec,
-    V1PodTemplateSpec,
-    V1Volume,
-    V1VolumeMount,
-)
+from kubernetes.client import ApiException
 
-from jkclient.models import V1Kernel, V1KernelSpec
+import jkclient.models
+from jkclient.models import V1Kernel
 from jkclient.schema import CreateKernelRequest
 from jkclient.schema import Kernel as KernelSchema
 
@@ -29,6 +28,18 @@ KERNEL_CONNECTION = "jupyter.org/kernel-connection-info"
 
 
 class JupyterKernelClient:
+    PRIMITIVE_TYPES = (float, bool, bytes, six.text_type) + six.integer_types
+    NATIVE_TYPES_MAPPING = {
+        "int": int,
+        "long": int if six.PY3 else long,  # noqa: F821
+        "float": float,
+        "str": str,
+        "bool": bool,
+        "date": datetime.date,
+        "datetime": datetime.datetime,
+        "object": object,
+    }
+
     def __init__(
         self,
         group: str = "jupyter.org",
@@ -65,52 +76,53 @@ class JupyterKernelClient:
         logger.debug("Create kernel from env: %s", env)
 
         kernel_id = env.get("KERNEL_ID", uuid4().hex)
-        kernel_name = request.name or f"jovyan-{kernel_id}"
+
+        kernel_user = env.get("KERNEL_USERNAME", "jovyan")
+        kernel_name = request.name or f"{kernel_user}-{kernel_id}"
+
         kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
 
-        # Set kernel volume mounts
-        volume_mounts = []
-        kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", None)
-        if kernel_volume_mounts and isinstance(kernel_volume_mounts, list):
-            volume_mounts = [
-                V1VolumeMount(**volume_mount) for volume_mount in kernel_volume_mounts
-            ]
+        # Check kernel image not none
+        if not env.get("KERNEL_IMAGE"):
+            error_msg = "`KERNEL_IMAGE` must be not none"
+            raise ValueError(error_msg)
 
-        # Set kernel volumes
-        volumes = []
-        kernel_volumes = env.pop("KERNEL_VOLUMES", None)
-        if kernel_volumes and isinstance(kernel_volumes, list):
-            volumes = [V1Volume(**volume) for volume in kernel_volumes]
+        # pop kernel volumes and volume_mounts
+        kernel_volumes = env.pop("KERNEL_VOLUMES", [])
+        kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", [])
 
-        # TODO: Set kernel env, value_from is not considered
-        container_env = [
-            V1EnvVar(name=name, value=value) for name, value in env.items()
-        ]
-
-        kernel = V1Kernel(
-            api_version=self.api_version,
-            kind=self.kind,
-            metadata=V1ObjectMeta(
-                name=kernel_name,
-                namespace=kernel_namespace,
-            ),
-            spec=V1KernelSpec(
-                template=V1PodTemplateSpec(
-                    spec=V1PodSpec(
-                        containers=[
-                            V1Container(
-                                name="main",
-                                image=env["KERNEL_IMAGE"],
-                                env=container_env,
-                                volume_mounts=volume_mounts,
-                            )
+        # Generate kernel dict
+        kernel_dict = {
+            "apiVersion": self.api_version,
+            "kind": self.kind,
+            "metadata": {
+                "labels": {KERNEL_ID: kernel_id},
+                "name": kernel_name,
+                "namespace": kernel_namespace,
+            },
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {
+                                "env": [
+                                    {"name": name, "value": value}
+                                    for name, value in env.items()
+                                ],
+                                "image": env["KERNEL_IMAGE"],
+                                "name": "main",
+                                "volumeMounts": kernel_volume_mounts,
+                                "workingDir": env.get("KERNEL_WORKING_DIR"),
+                            }
                         ],
-                        restart_policy="Never",
-                        volumes=volumes,
-                    ),
-                ),
-            ),
-        )
+                        "restartPolicy": "Never",
+                        "volumes": kernel_volumes,
+                    }
+                }
+            },
+        }
+
+        kernel = self._deserialize(kernel_dict, V1Kernel)
 
         try:
             response = self.api_instance.create_namespaced_custom_object(
@@ -239,3 +251,154 @@ class JupyterKernelClient:
 
             error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg) from None
+
+    def _deserialize(self, data, klass):
+        """Deserializes dict, list, str into an object.
+
+        :param data: dict, list or str.
+        :param klass: class literal, or string of class name.
+
+        :return: object.
+        """
+        if data is None:
+            return None
+
+        if klass == "file":
+            return self.__deserialize_file(data)
+
+        if type(klass) == str:  # noqa: E721
+            if klass.startswith("list["):
+                sub_kls = re.match(r"list\[(.*)\]", klass).group(1)
+                return [self._deserialize(sub_data, sub_kls) for sub_data in data]
+
+            if klass.startswith("dict("):
+                sub_kls = re.match(r"dict\(([^,]*), (.*)\)", klass).group(2)
+                return {
+                    k: self._deserialize(v, sub_kls) for k, v in six.iteritems(data)
+                }
+
+            # convert str to class
+            if klass in self.NATIVE_TYPES_MAPPING:
+                klass = self.NATIVE_TYPES_MAPPING[klass]
+            else:
+                try:
+                    klass = getattr(jkclient.models, klass)
+                except AttributeError:
+                    klass = getattr(kubernetes.client.models, klass)
+
+        if klass in self.PRIMITIVE_TYPES:
+            return self.__deserialize_primitive(data, klass)
+        elif klass == object:  # noqa: E721
+            return self.__deserialize_object(data)
+        elif klass == datetime.date:
+            return self.__deserialize_date(data)
+        elif klass == datetime.datetime:
+            return self.__deserialize_datetime(data)
+        else:
+            return self.__deserialize_model(data, klass)
+
+    def __deserialize_file(self, response):
+        """Deserializes body to file
+
+        Saves response body into a file in a temporary folder,
+        using the filename from the `Content-Disposition` header if provided.
+
+        :param response:  RESTResponse.
+        :return: file path.
+        """
+        fd, path = tempfile.mkstemp(dir=self.configuration.temp_folder_path)
+        os.close(fd)
+        os.remove(path)
+
+        content_disposition = response.getheader("Content-Disposition")
+        if content_disposition:
+            filename = re.search(
+                r'filename=[\'"]?([^\'"\s]+)[\'"]?', content_disposition
+            ).group(1)
+            path = os.path.join(os.path.dirname(path), filename)
+
+        with open(path, "wb") as f:
+            f.write(response.data)
+
+        return path
+
+    def __deserialize_primitive(self, data, klass):
+        """Deserializes string to primitive type.
+
+        :param data: str.
+        :param klass: class literal.
+
+        :return: int, long, float, str, bool.
+        """
+        try:
+            return klass(data)
+        except UnicodeEncodeError:
+            return six.text_type(data)
+        except TypeError:
+            return data
+
+    def __deserialize_object(self, value):
+        """Return an original value.
+
+        :return: object.
+        """
+        return value
+
+    def __deserialize_date(self, string):
+        """Deserializes string to date.
+
+        :param string: str.
+        :return: date.
+        """
+        try:
+            return parse(string).date()
+        except ImportError:
+            return string
+        except ValueError:
+            raise ValueError("Failed to parse `{0}` as date object".format(string))
+
+    def __deserialize_datetime(self, string):
+        """Deserializes string to datetime.
+
+        The string should be in iso8601 datetime format.
+
+        :param string: str.
+        :return: datetime.
+        """
+        try:
+            return parse(string)
+        except ImportError:
+            return string
+        except ValueError:
+            error_msg = "Failed to parse `{0}` as datetime object".format(string)
+            raise ValueError(error_msg)
+
+    def __deserialize_model(self, data, klass):
+        """Deserializes list or dict to model.
+
+        :param data: dict, list.
+        :param klass: class literal.
+        :return: model object.
+        """
+
+        if not klass.openapi_types and not hasattr(klass, "get_real_child_model"):
+            return data
+
+        kwargs = {}
+        if (
+            data is not None
+            and klass.openapi_types is not None
+            and isinstance(data, (list, dict))
+        ):
+            for attr, attr_type in six.iteritems(klass.openapi_types):
+                if klass.attribute_map[attr] in data:
+                    value = data[klass.attribute_map[attr]]
+                    kwargs[attr] = self._deserialize(value, attr_type)
+
+        instance = klass(**kwargs)
+
+        if hasattr(instance, "get_real_child_model"):
+            klass_name = instance.get_real_child_model(data)
+            if klass_name:
+                instance = self._deserialize(data, klass_name)
+        return instance

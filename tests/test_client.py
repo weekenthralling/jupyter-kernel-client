@@ -135,5 +135,17 @@ def test_delete_kernel() -> None:
     client.delete(name="foo-1", namespace="default")
 
 
+@pytest.mark.skip(reason="Delete kernel with kubernetes config")
+def test_delete_kernel_by_kernel_id() -> None:
+    client = JupyterKernelClient(incluster=False)
+    client.delete_by_kernel_id(kerenl_id="968183bb-13ef-4faf-b7d8-30fe8d20e6a3")
+
+
+@pytest.mark.skip(reason="Delete kernel with kubernetes config")
+def test_delete_kernel_none() -> None:
+    client = JupyterKernelClient(incluster=False)
+    client.delete_by_kernel_id(kerenl_id=str(uuid4()))
+
+
 if __name__ == "__main__":
     pytest.main()

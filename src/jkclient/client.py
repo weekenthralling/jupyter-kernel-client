@@ -254,6 +254,26 @@ class JupyterKernelClient:
             error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg) from None
 
+    def delete_by_kernel_id(self, kerenl_id) -> None:
+        """Delete kernel by kernel id
+
+        Args:
+            kerenl_id (_type_): kernel id
+        """
+
+        label_selector = f"{KERNEL_ID}={kerenl_id}"
+        kernels = self.api_instance.list_cluster_custom_object(
+            group=self.group,
+            version=self.version,
+            plural=self.plural,
+            label_selector=label_selector,
+        )
+        logger.debug("List kernel response %s", kernels)
+        if items := kernels.get("items", []):
+            kernel_name = items[0]["metadata"]["name"]
+            kernel_namespace = items[0]["metadata"]["namespace"]
+            self.delete(name=kernel_name, namespace=kernel_namespace)
+
     def _deserialize(self, data, klass):
         """Deserializes dict, list, str into an object.
 

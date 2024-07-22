@@ -30,7 +30,7 @@ class JupyterKernelClient:
     PRIMITIVE_TYPES = (float, bool, bytes, six.text_type) + six.integer_types
     NATIVE_TYPES_MAPPING = {
         "int": int,
-        "long": int if six.PY3 else long,  # noqa: F821
+        "long": int if six.PY3 else long,  # type: ignore # noqa: F821
         "float": float,
         "str": str,
         "bool": bool,
@@ -41,11 +41,11 @@ class JupyterKernelClient:
 
     def __init__(
         self,
+        incluster: bool,
         group: str = "jupyter.org",
         version: str = "v1",
         kind: str = "Kernel",
         plural: str = "kernels",
-        incluster: bool = True,  # noqa: FBT001, FBT002
         timeout: int = 60,
     ) -> None:
         if incluster:

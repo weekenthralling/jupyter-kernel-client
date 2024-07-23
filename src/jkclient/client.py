@@ -9,9 +9,9 @@ import tempfile
 import time
 from http import HTTPStatus
 
+import kubernetes.client.models
 import six
 from dateutil.parser import parse
-import kubernetes.client.models
 from kubernetes import client, config, watch
 from kubernetes.client import ApiException
 
@@ -62,7 +62,7 @@ class JupyterKernelClient:
         self.api_version = f"{group}/{version}"
         self.api_instance = client.CustomObjectsApi()
 
-    def create(self, request: CreateKernelRequest) -> KernelSchema | None:
+    def create(self, request: CreateKernelRequest, **kwargs) -> KernelSchema | None:
         """Create kernel resource
 
         Args:
@@ -133,6 +133,7 @@ class JupyterKernelClient:
                 namespace=kernel_namespace,
                 plural=self.plural,
                 body=kernel,
+                **kwargs,
             )
             logger.debug("Create response: %s", response)
         except ApiException as e:
@@ -145,7 +146,7 @@ class JupyterKernelClient:
 
         # Get kernel connection info from kernel label
         resource = self._wait_for_kernel_ready(
-            name=kernel_name, namespace=kernel_namespace
+            name=kernel_name, namespace=kernel_namespace, **kwargs
         )
         if resource and (
             conn_info := resource["metadata"]["annotations"].get(KERNEL_CONNECTION)
@@ -157,43 +158,9 @@ class JupyterKernelClient:
         error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
         raise RuntimeError(error_msg) from None
 
-    def _wait_for_kernel_ready(self, name, namespace, timeout=60):
-        w = watch.Watch()
-        start_time = time.time()
-        logger.debug("Waiting for kernel %s to be created", name)
-        for event in w.stream(
-            self.api_instance.list_namespaced_custom_object,
-            group=self.group,
-            version=self.version,
-            namespace=namespace,
-            plural=self.plural,
-            timeout_seconds=timeout,
-        ):
-            if event["type"] == "ADDED" or event["type"] == "MODIFIED":  # noqa: SIM102
-                if event["object"]["metadata"]["name"] == name and event["object"].get(
-                    "status"
-                ):
-                    logger.debug("Kernel %s created with event: %s", name, namespace)
-                    conditions = event["object"]["status"].get("conditions", [])
-                    available_condition = next(
-                        (c for c in conditions if c.get("type", None) == "Ready"), None
-                    )
-                    if (
-                        available_condition
-                        and available_condition.get("status", None) == "True"
-                    ):
-                        w.stop()
-                        return event["object"]
-            if time.time() - start_time > timeout:
-                logger.warning(
-                    "Timeout waiting for kernel %s to be ready, delete it", name
-                )
-                self.delete(name=name, namespace=namespace)
-                w.stop()
-                return None
-        return None
-
-    def get(self, name: str, namespace: str = "default") -> KernelSchema | None:
+    def get(
+        self, name: str, namespace: str = "default", **kwargs
+    ) -> KernelSchema | None:
         """Get kernel connection info by name and namespace
 
         Args:
@@ -211,6 +178,7 @@ class JupyterKernelClient:
                 namespace=namespace,
                 plural=self.plural,
                 name=name,
+                **kwargs,
             )
         except ApiException as e:
             if e.status == HTTPStatus.NOT_FOUND.value:
@@ -231,7 +199,7 @@ class JupyterKernelClient:
             conn_info=json.loads(conn_info) if conn_info else {},
         )
 
-    def delete(self, name: str, namespace: str = "default") -> None:
+    def delete(self, name: str, namespace: str = "default", **kwargs) -> None:
         """Delete kernel by name and namespaces
 
         Args:
@@ -245,6 +213,7 @@ class JupyterKernelClient:
                 namespace=namespace,
                 plural=self.plural,
                 name=name,
+                **kwargs,
             )
         except ApiException as e:
             if e.status == HTTPStatus.NOT_FOUND.value:
@@ -254,7 +223,7 @@ class JupyterKernelClient:
             error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg) from None
 
-    def delete_by_kernel_id(self, kerenl_id) -> None:
+    def delete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
         """Delete kernel by kernel id
 
         Args:
@@ -267,12 +236,57 @@ class JupyterKernelClient:
             version=self.version,
             plural=self.plural,
             label_selector=label_selector,
+            **kwargs,
         )
         logger.debug("List kernel response %s", kernels)
         if items := kernels.get("items", []):
             kernel_name = items[0]["metadata"]["name"]
             kernel_namespace = items[0]["metadata"]["namespace"]
-            self.delete(name=kernel_name, namespace=kernel_namespace)
+            self.delete(name=kernel_name, namespace=kernel_namespace, **kwargs)
+
+    def _wait_for_kernel_ready(self, name, namespace, timeout=60, **kwargs):
+        w = watch.Watch()
+        start_time = time.time()
+        logger.debug("Waiting for kernel %s to be created", name)
+        try:
+            for event in w.stream(
+                self.api_instance.list_namespaced_custom_object,
+                group=self.group,
+                version=self.version,
+                namespace=namespace,
+                plural=self.plural,
+                timeout_seconds=timeout,
+                **kwargs,
+            ):
+                if event["type"] == "ADDED" or event["type"] == "MODIFIED":  # noqa: SIM102
+                    if event["object"]["metadata"]["name"] == name and event[
+                        "object"
+                    ].get("status"):
+                        logger.debug(
+                            "Kernel %s created with event: %s", name, namespace
+                        )
+                        conditions = event["object"]["status"].get("conditions", [])
+                        available_condition = next(
+                            (c for c in conditions if c.get("type", None) == "Ready"),
+                            None,
+                        )
+                        if (
+                            available_condition
+                            and available_condition.get("status", None) == "True"
+                        ):
+                            w.stop()
+                            return event["object"]
+                if time.time() - start_time > timeout:
+                    logger.warning(
+                        "Timeout waiting for kernel %s to be ready, delete it", name
+                    )
+                    self.delete(name=name, namespace=namespace, **kwargs)
+                    w.stop()
+                    return None
+        finally:
+            w.stop()
+
+        return None
 
     def _deserialize(self, data, klass):
         """Deserializes dict, list, str into an object.

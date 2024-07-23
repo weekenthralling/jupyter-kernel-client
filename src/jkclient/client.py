@@ -8,6 +8,7 @@ import re
 import tempfile
 import time
 from http import HTTPStatus
+from typing import Any
 
 import kubernetes.client.models
 import six
@@ -62,7 +63,7 @@ class JupyterKernelClient:
         self.api_version = f"{group}/{version}"
         self.api_instance = client.CustomObjectsApi()
 
-    def create(self, request: CreateKernelRequest, **kwargs) -> KernelSchema | None:
+    def create(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
         """Create kernel resource
 
         Args:
@@ -142,25 +143,12 @@ class JupyterKernelClient:
                 return self.get(name=kernel_name, namespace=kernel_namespace)
 
             error_msg = f"Error create kernel: {e.status}\n{e.reason}"
-            raise RuntimeError(error_msg) from None
+            raise RuntimeError(error_msg)
 
         # Get kernel connection info from kernel label
-        resource = self._wait_for_kernel_ready(
-            name=kernel_name, namespace=kernel_namespace, **kwargs
-        )
-        if resource and (
-            conn_info := resource["metadata"]["annotations"].get(KERNEL_CONNECTION)
-        ):
-            return KernelSchema(
-                kernel_id=kernel_id, name=kernel_name, conn_info=json.loads(conn_info)
-            )
+        return self.get(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
-        raise RuntimeError(error_msg) from None
-
-    def get(
-        self, name: str, namespace: str = "default", **kwargs
-    ) -> KernelSchema | None:
+    def get(self, name: str, namespace: str = "default", **kwargs) -> KernelSchema:
         """Get kernel connection info by name and namespace
 
         Args:
@@ -181,23 +169,25 @@ class JupyterKernelClient:
                 **kwargs,
             )
         except ApiException as e:
-            if e.status == HTTPStatus.NOT_FOUND.value:
-                return None
-
             error_msg = f"Error get kernel: {e.status}\n{e.reason}"
-            raise RuntimeError(error_msg) from None
+            raise RuntimeError(error_msg)
 
-        # TODO: Check kernel if ready
+        # Check kernel if ready
+        if kernel := self._wait_for_kernel_ready(
+            name=name, namespace=namespace, **kwargs
+        ):
+            # Get kernel connection info from kernel label
+            kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
+            conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
 
-        # Get kernel connection info from kernel label
-        kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
-        conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
+            return KernelSchema(
+                name=name,
+                kernel_id=kernel_id,
+                conn_info=json.loads(conn_info) if conn_info else {},
+            )
 
-        return KernelSchema(
-            name=name,
-            kernel_id=kernel_id,
-            conn_info=json.loads(conn_info) if conn_info else {},
-        )
+        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
+        raise RuntimeError(error_msg)
 
     def delete(self, name: str, namespace: str = "default", **kwargs) -> None:
         """Delete kernel by name and namespaces
@@ -221,7 +211,7 @@ class JupyterKernelClient:
                 return
 
             error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
-            raise RuntimeError(error_msg) from None
+            raise RuntimeError(error_msg)
 
     def delete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
         """Delete kernel by kernel id
@@ -244,7 +234,20 @@ class JupyterKernelClient:
             kernel_namespace = items[0]["metadata"]["namespace"]
             self.delete(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-    def _wait_for_kernel_ready(self, name, namespace, timeout=60, **kwargs):
+    def _wait_for_kernel_ready(
+        self, name: str, namespace: str, timeout=60, **kwargs
+    ) -> Any | bool:
+        """waitting for kernel ready
+
+        Args:
+            name (str): kernel name
+            namespace (str): kernel namespaces
+            timeout (int, optional): The maximum waiting time is reached;
+                if it exceeds this time, stop watching and return false.. Defaults to 60.
+
+        Returns:
+            bool: Retuen kernel CR if kernel ready, otherwise, return false.
+        """
         w = watch.Watch()
         start_time = time.time()
         logger.debug("Waiting for kernel %s to be created", name)
@@ -274,19 +277,17 @@ class JupyterKernelClient:
                             available_condition
                             and available_condition.get("status", None) == "True"
                         ):
-                            w.stop()
                             return event["object"]
                 if time.time() - start_time > timeout:
                     logger.warning(
                         "Timeout waiting for kernel %s to be ready, delete it", name
                     )
                     self.delete(name=name, namespace=namespace, **kwargs)
-                    w.stop()
-                    return None
+                    return False
         finally:
             w.stop()
 
-        return None
+        return False
 
     def _deserialize(self, data, klass):
         """Deserializes dict, list, str into an object.

@@ -124,9 +124,8 @@ def test_get_kernel() -> None:
 @pytest.mark.skip(reason="Get kernel with kubernetes config")
 def test_get_kernel_none() -> None:
     client = JupyterKernelClient(incluster=False)
-    kernel = client.get(name="foo-1")
-
-    assert kernel is None
+    with pytest.raises(RuntimeError):
+        client.get(name="foo-1")
 
 
 @pytest.mark.skip(reason="Delete kernel with kubernetes config")

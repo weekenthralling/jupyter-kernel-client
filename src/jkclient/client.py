@@ -148,6 +148,92 @@ class JupyterKernelClient:
         # Get kernel connection info from kernel label
         return self.get(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
+    async def acreate(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
+        """Create kernel resource
+
+        Args:
+            request (CreateKernelRequest): create kernel request
+
+        Returns:
+            KernelSchema: kernel connection info
+        """
+        env = request.env
+        logger.debug("Create kernel from env: %s", env)
+
+        # Check kernel env
+        if not env.get("KERNEL_IMAGE"):
+            error_msg = "`KERNEL_IMAGE` must be not none"
+            raise ValueError(error_msg)
+
+        if not env.get("KERNEL_ID"):
+            error_msg = "`KERNEL_ID` must be not none"
+            raise ValueError(error_msg)
+
+        kernel_id = env["KERNEL_ID"]
+        kernel_user = env.get("KERNEL_USERNAME", "jovyan")
+        kernel_name = request.name or f"{kernel_user}-{kernel_id}"
+
+        kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
+
+        # pop kernel volumes and volume_mounts
+        kernel_volumes = env.pop("KERNEL_VOLUMES", [])
+        kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", [])
+
+        # Generate kernel dict
+        kernel_dict = {
+            "apiVersion": self.api_version,
+            "kind": self.kind,
+            "metadata": {
+                "labels": {KERNEL_ID: kernel_id},
+                "name": kernel_name,
+                "namespace": kernel_namespace,
+            },
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {
+                                "env": [
+                                    {"name": name, "value": value}
+                                    for name, value in env.items()
+                                ],
+                                "image": env["KERNEL_IMAGE"],
+                                "name": "main",
+                                "volumeMounts": kernel_volume_mounts,
+                                "workingDir": env.get("KERNEL_WORKING_DIR"),
+                            }
+                        ],
+                        "restartPolicy": "Never",
+                        "volumes": kernel_volumes,
+                    }
+                }
+            },
+        }
+
+        kernel = self._deserialize(kernel_dict, V1Kernel)
+
+        try:
+            response = self.api_instance.create_namespaced_custom_object(
+                group=self.group,
+                version=self.version,
+                namespace=kernel_namespace,
+                plural=self.plural,
+                body=kernel,
+                async_req=True,
+                **kwargs,
+            )
+            logger.debug("Create response: %s", response.get())
+        except ApiException as e:
+            if e.status == HTTPStatus.CONFLICT.value:
+                logger.debug("kernel %s already exists", kernel_name)
+                return await self.aget(name=kernel_name, namespace=kernel_namespace)
+
+            error_msg = f"Error create kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg)
+
+        # Get kernel connection info from kernel label
+        return await self.aget(name=kernel_name, namespace=kernel_namespace, **kwargs)
+
     def get(self, name: str, namespace: str = "default", **kwargs) -> KernelSchema:
         """Get kernel connection info by name and namespace
 
@@ -166,6 +252,50 @@ class JupyterKernelClient:
                 namespace=namespace,
                 plural=self.plural,
                 name=name,
+                **kwargs,
+            )
+        except ApiException as e:
+            error_msg = f"Error get kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg)
+
+        # Check kernel if ready
+        if kernel := self._wait_for_kernel_ready(
+            name=name, namespace=namespace, **kwargs
+        ):
+            # Get kernel connection info from kernel label
+            kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
+            conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
+
+            return KernelSchema(
+                name=name,
+                kernel_id=kernel_id,
+                conn_info=json.loads(conn_info) if conn_info else {},
+            )
+
+        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
+        raise RuntimeError(error_msg)
+
+    async def aget(
+        self, name: str, namespace: str = "default", **kwargs
+    ) -> KernelSchema:
+        """Get kernel connection info by name and namespace
+
+        Args:
+            name (str): kernel name
+            namespace (str, optional): kernel namespace. Defaults to "default".
+
+        Returns:
+            KernelSchema: kernel connection info
+        """
+
+        try:
+            kernel = self.api_instance.get_namespaced_custom_object(
+                group=self.group,
+                version=self.version,
+                namespace=namespace,
+                plural=self.plural,
+                name=name,
+                async_req=True,
                 **kwargs,
             )
         except ApiException as e:
@@ -213,6 +343,31 @@ class JupyterKernelClient:
             error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
+    async def adelete(self, name: str, namespace: str = "default", **kwargs) -> None:
+        """Delete kernel by name and namespaces
+
+        Args:
+            name (str): kernel name
+            namespace (str, optional): kernel namespace. Defaults to "default".
+        """
+        try:
+            self.api_instance.delete_namespaced_custom_object(
+                group=self.group,
+                version=self.version,
+                namespace=namespace,
+                plural=self.plural,
+                name=name,
+                async_req=True,
+                **kwargs,
+            )
+        except ApiException as e:
+            if e.status == HTTPStatus.NOT_FOUND.value:
+                logger.warning("Kernel %s not found", name)
+                return
+
+            error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
+            raise RuntimeError(error_msg)
+
     def delete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
         """Delete kernel by kernel id
 
@@ -233,6 +388,29 @@ class JupyterKernelClient:
             kernel_name = items[0]["metadata"]["name"]
             kernel_namespace = items[0]["metadata"]["namespace"]
             self.delete(name=kernel_name, namespace=kernel_namespace, **kwargs)
+
+    async def adelete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
+        """Delete kernel by kernel id
+
+        Args:
+            kerenl_id (_type_): kernel id
+        """
+
+        label_selector = f"{KERNEL_ID}={kerenl_id}"
+        response = self.api_instance.list_cluster_custom_object(
+            group=self.group,
+            version=self.version,
+            plural=self.plural,
+            label_selector=label_selector,
+            async_req=True,
+            **kwargs,
+        )
+        kernels = response.get()
+        logger.debug("List kernel response %s", kernels)
+        if items := kernels.get("items", []):
+            kernel_name = items[0]["metadata"]["name"]
+            kernel_namespace = items[0]["metadata"]["namespace"]
+            await self.adelete(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
     def _wait_for_kernel_ready(
         self, name: str, namespace: str, timeout=60, **kwargs

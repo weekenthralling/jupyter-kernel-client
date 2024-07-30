@@ -20,6 +20,7 @@ import jkclient.models
 from jkclient.models import V1Kernel
 from jkclient.schema import CreateKernelRequest
 from jkclient.schema import Kernel as KernelSchema
+from jkclient.schema import KernelCreationForbiddenError
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,12 @@ class JupyterKernelClient:
             if e.status == HTTPStatus.CONFLICT.value:
                 logger.debug("kernel %s already exists", kernel_name)
                 return self.get(name=kernel_name, namespace=kernel_namespace)
+            if e.status == HTTPStatus.FORBIDDEN.values():
+                error_msg = (
+                    "Kernel creation is forbidden with error code 403. \n"
+                    + "Please check permissions or resource quota limits."
+                )
+                raise KernelCreationForbiddenError(error_msg)
 
             error_msg = f"Error create kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
@@ -227,6 +234,12 @@ class JupyterKernelClient:
             if e.status == HTTPStatus.CONFLICT.value:
                 logger.debug("kernel %s already exists", kernel_name)
                 return await self.aget(name=kernel_name, namespace=kernel_namespace)
+            if e.status == HTTPStatus.FORBIDDEN.values():
+                error_msg = (
+                    "Kernel creation is forbidden with error code 403. \n"
+                    + "Please check permissions or resource quota limits."
+                )
+                raise KernelCreationForbiddenError(error_msg)
 
             error_msg = f"Error create kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)

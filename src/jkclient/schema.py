@@ -6,6 +6,22 @@ from typing import Any
 from pydantic import BaseModel, field_validator
 
 
+class KernelCreationForbiddenError(RuntimeError):
+    """Exception raised when kernel creation is forbidden.
+
+    This exception is used to indicate that a kernel creation operation
+    was rejected due to permission issues or other constraints that
+    prevent the creation of the kernel. These constraints may include,
+    but are not limited to, resource quotas that limit the number of
+    kernels that can be created. The associated HTTP status code is
+    typically 403 Forbidden.
+    """
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
+
+
 class CreateKernelRequest(BaseModel):
     name: str | None = None
     """Kernel spec name (defaults to default kernel spec for server)."""

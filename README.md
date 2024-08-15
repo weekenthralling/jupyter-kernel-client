@@ -19,7 +19,7 @@ pip install jkclient
 from uuid import uuid4
 from jkclient import CreateKernelRequest, JupyterKernelClient
 
-client = JupyterKernelClient(incluster=False)
+client = JupyterKernelClient()
 request = CreateKernelRequest(
     name="foo",
     env={

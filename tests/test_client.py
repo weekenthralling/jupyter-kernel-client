@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
@@ -8,14 +7,13 @@ from jkclient.schema import KernelCreationForbiddenError
 
 
 @pytest.fixture(scope="module")
-def kernel_client() -> Iterator[JupyterKernelClient]:
-    client = JupyterKernelClient(incluster=False)
-    yield client
+def kernel_client() -> JupyterKernelClient:
+    return JupyterKernelClient()
 
 
 @pytest.fixture(scope="module")
-def create_kernel_request() -> Iterator[CreateKernelRequest]:
-    request = CreateKernelRequest(
+def create_kernel_request() -> CreateKernelRequest:
+    return CreateKernelRequest(
         env={
             "KERNEL_ID": str(uuid4()),
             "KERNEL_USERNAME": "dev",
@@ -60,8 +58,6 @@ def create_kernel_request() -> Iterator[CreateKernelRequest]:
             "KERNEL_IDLE_TIMEOUT": "1800",
         },
     )
-
-    yield request
 
 
 @pytest.mark.skip(reason="Create kernel with kubernetes config")

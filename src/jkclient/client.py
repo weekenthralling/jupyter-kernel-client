@@ -43,16 +43,15 @@ class JupyterKernelClient:
 
     def __init__(
         self,
-        incluster: bool,
         group: str = "jupyter.org",
         version: str = "v1",
         kind: str = "Kernel",
         plural: str = "kernels",
         timeout: int = 60,
     ) -> None:
-        if incluster:
+        try:
             config.load_incluster_config()
-        else:
+        except config.ConfigException:
             config.load_kube_config()
 
         self.kind = kind

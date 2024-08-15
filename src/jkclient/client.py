@@ -8,7 +8,6 @@ import re
 import tempfile
 import time
 from http import HTTPStatus
-from typing import Any
 
 import kubernetes.client.models
 import six
@@ -435,17 +434,16 @@ class JupyterKernelClient:
 
     def _wait_for_kernel_ready(
         self, name: str, namespace: str, timeout=60, **kwargs
-    ) -> Any | bool:
-        """waitting for kernel ready
+    ) -> dict | bool:
+        """
+        Wait for the kernel to be ready and retrieve it.
 
         Args:
-            name (str): kernel name
-            namespace (str): kernel namespaces
-            timeout (int, optional): The maximum waiting time is reached;
-                if it exceeds this time, stop watching and return false.. Defaults to 60.
+            name (str): Kernel name.
+            namespace (str): Kernel namespace.
 
         Returns:
-            bool: Retuen kernel CR if kernel ready, otherwise, return false.
+            dict | bool: The kernel's details if ready, or `False` if not ready.
         """
         w = watch.Watch()
         start_time = time.time()
@@ -460,23 +458,22 @@ class JupyterKernelClient:
                 timeout_seconds=timeout,
                 **kwargs,
             ):
-                if event["type"] == "ADDED" or event["type"] == "MODIFIED":  # noqa: SIM102
-                    if event["object"]["metadata"]["name"] == name and event[
-                        "object"
-                    ].get("status"):
+                if event["type"] in {"ADDED", "MODIFIED"}:
+                    obj = event["object"]
+                    if obj["metadata"]["name"] == name and obj.get("status"):
                         logger.debug(
-                            "Kernel %s created with event: %s", name, namespace
+                            "Kernel %s received event: %s", name, event["type"]
                         )
-                        conditions = event["object"]["status"].get("conditions", [])
+                        conditions = obj["status"].get("conditions", [])
                         available_condition = next(
-                            (c for c in conditions if c.get("type", None) == "Ready"),
-                            None,
+                            (c for c in conditions if c.get("type") == "Ready"), None
                         )
-                        if (
-                            available_condition
-                            and available_condition.get("status", None) == "True"
-                        ):
-                            return event["object"]
+                    if (
+                        available_condition
+                        and available_condition.get("status") == "True"
+                    ):
+                        logger.debug("Kernel %s is ready.", name)
+                        return obj
                 if time.time() - start_time > timeout:
                     logger.warning(
                         "Timeout waiting for kernel %s to be ready, delete it", name

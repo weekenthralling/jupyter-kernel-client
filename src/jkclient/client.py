@@ -64,37 +64,39 @@ class JupyterKernelClient:
         self.api_instance = client.CustomObjectsApi()
 
     def create(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
-        """Create kernel resource
+        """
+        Create a kernel resource in Kubernetes.
 
         Args:
-            request (CreateKernelRequest): create kernel request
+            request (CreateKernelRequest): The request object containing kernel creation parameters.
 
         Returns:
-            KernelSchema: kernel connection info
+            KernelSchema: The created kernel's connection information.
+
+        Raises:
+            ValueError: If required environment variables are missing.
+            KernelCreationForbiddenError: If kernel creation is forbidden by Kubernetes.
+            RuntimeError: For other errors during kernel creation.
         """
         env = request.env
-        logger.debug("Create kernel from env: %s", env)
+        logger.debug("Creating kernel with env: %s", env)
 
-        # Check kernel env
+        # Validate required environment variables
         if not env.get("KERNEL_IMAGE"):
-            error_msg = "`KERNEL_IMAGE` must be not none"
-            raise ValueError(error_msg)
-
+            raise ValueError("`KERNEL_IMAGE` must be specified")
         if not env.get("KERNEL_ID"):
-            error_msg = "`KERNEL_ID` must be not none"
-            raise ValueError(error_msg)
+            raise ValueError("`KERNEL_ID` must be specified")
 
         kernel_id = env["KERNEL_ID"]
         kernel_user = env.get("KERNEL_USERNAME", "jovyan")
         kernel_name = request.name or f"{kernel_user}-{kernel_id}"
-
         kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
 
-        # pop kernel volumes and volume_mounts
+        # Extract volumes and volume mounts
         kernel_volumes = env.pop("KERNEL_VOLUMES", [])
         kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", [])
 
-        # Generate kernel dict
+        # Build kernel dictionary
         kernel_dict = {
             "apiVersion": self.api_version,
             "kind": self.kind,
@@ -136,56 +138,50 @@ class JupyterKernelClient:
                 body=kernel,
                 **kwargs,
             )
-            logger.debug("Create response: %s", response)
+            logger.debug("Kernel creation response: %s", response)
         except ApiException as e:
             if e.status == HTTPStatus.CONFLICT.value:
-                logger.debug("kernel %s already exists", kernel_name)
+                logger.debug("Kernel %s already exists", kernel_name)
                 return self.get(name=kernel_name, namespace=kernel_namespace)
             if e.status == HTTPStatus.FORBIDDEN.value:
-                error_msg = (
-                    "Kernel creation is forbidden with error code 403. \n"
-                    + "Please check permissions or resource quota limits."
-                )
+                error_msg = "Kernel creation is forbidden (403). Check permissions or resource quota limits."
                 raise KernelCreationForbiddenError(error_msg)
-
-            error_msg = f"Error create kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error creating kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-        # Get kernel connection info from kernel label
         return self.get(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
     async def acreate(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
-        """Create kernel resource
+        """
+        Asynchronously create a kernel resource in Kubernetes.
 
         Args:
-            request (CreateKernelRequest): create kernel request
+            request (CreateKernelRequest): The request object containing kernel creation parameters.
 
         Returns:
-            KernelSchema: kernel connection info
+            KernelSchema: The created kernel's connection information.
+
+        Raises:
+            ValueError: If required environment variables are missing.
+            KernelCreationForbiddenError: If kernel creation is forbidden by Kubernetes.
+            RuntimeError: For other errors during kernel creation.
         """
         env = request.env
-        logger.debug("Create kernel from env: %s", env)
+        logger.debug("Asynchronously creating kernel with env: %s", env)
 
-        # Check kernel env
         if not env.get("KERNEL_IMAGE"):
-            error_msg = "`KERNEL_IMAGE` must be not none"
-            raise ValueError(error_msg)
-
+            raise ValueError("`KERNEL_IMAGE` must be specified")
         if not env.get("KERNEL_ID"):
-            error_msg = "`KERNEL_ID` must be not none"
-            raise ValueError(error_msg)
+            raise ValueError("`KERNEL_ID` must be specified")
 
         kernel_id = env["KERNEL_ID"]
         kernel_user = env.get("KERNEL_USERNAME", "jovyan")
         kernel_name = request.name or f"{kernel_user}-{kernel_id}"
-
         kernel_namespace = env.get("KERNEL_NAMESPACE", "default")
 
-        # pop kernel volumes and volume_mounts
         kernel_volumes = env.pop("KERNEL_VOLUMES", [])
         kernel_volume_mounts = env.pop("KERNEL_VOLUME_MOUNTS", [])
 
-        # Generate kernel dict
         kernel_dict = {
             "apiVersion": self.api_version,
             "kind": self.kind,
@@ -228,35 +224,33 @@ class JupyterKernelClient:
                 async_req=True,
                 **kwargs,
             )
-            logger.debug("Create response: %s", response.get())
+            logger.debug("Asynchronous kernel creation response: %s", response.get())
         except ApiException as e:
             if e.status == HTTPStatus.CONFLICT.value:
-                logger.debug("kernel %s already exists", kernel_name)
+                logger.debug("Kernel %s already exists", kernel_name)
                 return await self.aget(name=kernel_name, namespace=kernel_namespace)
             if e.status == HTTPStatus.FORBIDDEN.value:
-                error_msg = (
-                    "Kernel creation is forbidden with error code 403. \n"
-                    + "Please check permissions or resource quota limits."
-                )
+                error_msg = "Kernel creation is forbidden (403). Check permissions or resource quota limits."
                 raise KernelCreationForbiddenError(error_msg)
-
-            error_msg = f"Error create kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error creating kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-        # Get kernel connection info from kernel label
         return await self.aget(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
     def get(self, name: str, namespace: str = "default", **kwargs) -> KernelSchema:
-        """Get kernel connection info by name and namespace
+        """
+        Get kernel connection information by name and namespace.
 
         Args:
-            name (str): kernel name
-            namespace (str, optional): kernel namespace. Defaults to "default".
+            name (str): Kernel name.
+            namespace (str, optional): Kernel namespace. Defaults to "default".
 
         Returns:
-            KernelSchema: kernel connection info
-        """
+            KernelSchema: The kernel's connection information.
 
+        Raises:
+            RuntimeError: If kernel creation timed out or if there is an error getting the kernel.
+        """
         try:
             kernel = self.api_instance.get_namespaced_custom_object(
                 group=self.group,
@@ -267,14 +261,12 @@ class JupyterKernelClient:
                 **kwargs,
             )
         except ApiException as e:
-            error_msg = f"Error get kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error getting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-        # Check kernel if ready
         if kernel := self._wait_for_kernel_ready(
             name=name, namespace=namespace, **kwargs
         ):
-            # Get kernel connection info from kernel label
             kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
             conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
 
@@ -284,22 +276,25 @@ class JupyterKernelClient:
                 conn_info=json.loads(conn_info) if conn_info else {},
             )
 
-        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
+        error_msg = f"Kernel launch timeout. Waited too long ({self.timeout}) to get connection info."
         raise RuntimeError(error_msg)
 
-    async def aget(
+    async def agget(
         self, name: str, namespace: str = "default", **kwargs
     ) -> KernelSchema:
-        """Get kernel connection info by name and namespace
+        """
+        Asynchronously get kernel connection information by name and namespace.
 
         Args:
-            name (str): kernel name
-            namespace (str, optional): kernel namespace. Defaults to "default".
+            name (str): Kernel name.
+            namespace (str, optional): Kernel namespace. Defaults to "default".
 
         Returns:
-            KernelSchema: kernel connection info
-        """
+            KernelSchema: The kernel's connection information.
 
+        Raises:
+            RuntimeError: If kernel creation timed out or if there is an error getting the kernel.
+        """
         try:
             kernel = self.api_instance.get_namespaced_custom_object(
                 group=self.group,
@@ -311,14 +306,12 @@ class JupyterKernelClient:
                 **kwargs,
             )
         except ApiException as e:
-            error_msg = f"Error get kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error getting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-        # Check kernel if ready
         if kernel := self._wait_for_kernel_ready(
             name=name, namespace=namespace, **kwargs
         ):
-            # Get kernel connection info from kernel label
             kernel_id = kernel["metadata"]["annotations"].get(KERNEL_ID, "")
             conn_info = kernel["metadata"]["annotations"].get(KERNEL_CONNECTION, None)
 
@@ -328,15 +321,19 @@ class JupyterKernelClient:
                 conn_info=json.loads(conn_info) if conn_info else {},
             )
 
-        error_msg = f"Kernel launch timeout due to: waited too long ({self.timeout}) to get connection info"
+        error_msg = f"Kernel launch timeout. Waited too long ({self.timeout}) to get connection info."
         raise RuntimeError(error_msg)
 
     def delete(self, name: str, namespace: str = "default", **kwargs) -> None:
-        """Delete kernel by name and namespaces
+        """
+        Delete a kernel resource by name and namespace.
 
         Args:
-            name (str): kernel name
-            namespace (str, optional): kernel namespace. Defaults to "default".
+            name (str): Kernel name.
+            namespace (str, optional): Kernel namespace. Defaults to "default".
+
+        Raises:
+            RuntimeError: For errors during kernel deletion.
         """
         try:
             self.api_instance.delete_namespaced_custom_object(
@@ -347,20 +344,24 @@ class JupyterKernelClient:
                 name=name,
                 **kwargs,
             )
+            logger.debug("Kernel %s deleted successfully", name)
         except ApiException as e:
             if e.status == HTTPStatus.NOT_FOUND.value:
                 logger.warning("Kernel %s not found", name)
                 return
-
-            error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error deleting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
     async def adelete(self, name: str, namespace: str = "default", **kwargs) -> None:
-        """Delete kernel by name and namespaces
+        """
+        Asynchronously delete a kernel resource by name and namespace.
 
         Args:
-            name (str): kernel name
-            namespace (str, optional): kernel namespace. Defaults to "default".
+            name (str): Kernel name.
+            namespace (str, optional): Kernel namespace. Defaults to "default".
+
+        Raises:
+            RuntimeError: For errors during kernel deletion.
         """
         try:
             self.api_instance.delete_namespaced_custom_object(
@@ -372,19 +373,23 @@ class JupyterKernelClient:
                 async_req=True,
                 **kwargs,
             )
+            logger.debug("Asynchronously deleted kernel %s", name)
         except ApiException as e:
             if e.status == HTTPStatus.NOT_FOUND.value:
                 logger.warning("Kernel %s not found", name)
                 return
-
-            error_msg = f"Error delete kernel: {e.status}\n{e.reason}"
+            error_msg = f"Error deleting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-    def delete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
-        """Delete kernel by kernel id
+    def delete_by_kernel_id(self, kerenl_id: str, **kwargs) -> None:
+        """
+        Delete a kernel resource by kerenl_id.
 
         Args:
-            kerenl_id (_type_): kernel id
+            kerenl_id (str): Kernel id.
+
+        Raises:
+            RuntimeError: For errors during kernel deletion.
         """
 
         label_selector = f"{KERNEL_ID}={kerenl_id}"
@@ -401,11 +406,15 @@ class JupyterKernelClient:
             kernel_namespace = items[0]["metadata"]["namespace"]
             self.delete(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-    async def adelete_by_kernel_id(self, kerenl_id, **kwargs) -> None:
-        """Delete kernel by kernel id
+    async def adelete_by_kernel_id(self, kerenl_id: str, **kwargs) -> None:
+        """
+        Asynchronously delete a kernel resource by name and namespace.
 
         Args:
-            kerenl_id (_type_): kernel id
+            kerenl_id (str): Kernel id.
+
+        Raises:
+            RuntimeError: For errors during kernel deletion.
         """
 
         label_selector = f"{KERNEL_ID}={kerenl_id}"

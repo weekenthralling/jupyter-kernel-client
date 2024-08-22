@@ -15,7 +15,7 @@ def kernel_client() -> JupyterKernelClient:
 def create_kernel_request() -> CreateKernelRequest:
     return CreateKernelRequest(
         env={
-            "KERNEL_ID": str(uuid4()),
+            "KERNEL_ID": "968183bb-13ef-4faf-b7d8-30fe8d20e6a3",
             "KERNEL_USERNAME": "dev",
             "KERNEL_NAMESPACE": "default",
             "KERNEL_IMAGE": "zjuici/tablegpt-kernel:0.1.1",
@@ -64,6 +64,7 @@ def create_kernel_request() -> CreateKernelRequest:
 def test_create_kernel(
     kernel_client: JupyterKernelClient, create_kernel_request: CreateKernelRequest
 ) -> None:
+    create_kernel_request.name = "foo-0"
     response = kernel_client.create(request=create_kernel_request)
     assert response is not None
 
@@ -100,6 +101,7 @@ def test_delete_kernel_none(kernel_client: JupyterKernelClient) -> None:
 async def test_acreate_kernel(
     kernel_client: JupyterKernelClient, create_kernel_request: CreateKernelRequest
 ) -> None:
+    create_kernel_request.name = "foo-0"
     response = await kernel_client.acreate(create_kernel_request)
     assert response is not None
 
@@ -130,7 +132,7 @@ async def test_adelete_kernel(kernel_client: JupyterKernelClient) -> None:
 @pytest.mark.skip(reason="Delete kernel with kubernetes config")
 async def test_adelete_kernel_w_kid(kernel_client: JupyterKernelClient) -> None:
     await kernel_client.adelete_by_kernel_id(
-        kerenl_id="9d173545-601d-4f82-b597-3dfc7f483798"
+        kerenl_id="968183bb-13ef-4faf-b7d8-30fe8d20e6a3"
     )
 
 

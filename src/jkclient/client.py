@@ -278,7 +278,7 @@ class JupyterKernelClient:
         error_msg = f"Kernel launch timeout. Waited too long ({self.timeout}) to get connection info."
         raise RuntimeError(error_msg)
 
-    async def agget(
+    async def aget(
         self, name: str, namespace: str = "default", **kwargs
     ) -> KernelSchema:
         """
@@ -295,7 +295,7 @@ class JupyterKernelClient:
             RuntimeError: If kernel creation timed out or if there is an error getting the kernel.
         """
         try:
-            kernel = self.api_instance.get_namespaced_custom_object(
+            response = self.api_instance.get_namespaced_custom_object(
                 group=self.group,
                 version=self.version,
                 namespace=namespace,
@@ -304,6 +304,7 @@ class JupyterKernelClient:
                 async_req=True,
                 **kwargs,
             )
+            kernel = response.get()
         except ApiException as e:
             error_msg = f"Error getting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
@@ -468,12 +469,12 @@ class JupyterKernelClient:
                         available_condition = next(
                             (c for c in conditions if c.get("type") == "Ready"), None
                         )
-                    if (
-                        available_condition
-                        and available_condition.get("status") == "True"
-                    ):
-                        logger.debug("Kernel %s is ready.", name)
-                        return obj
+                        if (
+                            available_condition
+                            and available_condition.get("status") == "True"
+                        ):
+                            logger.debug("Kernel %s is ready.", name)
+                            return obj
                 if time.time() - start_time > timeout:
                     logger.warning(
                         "Timeout waiting for kernel %s to be ready, delete it", name

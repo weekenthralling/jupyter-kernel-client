@@ -62,12 +62,14 @@ class JupyterKernelClient:
         self.api_version = f"{group}/{version}"
         self.api_instance = client.CustomObjectsApi()
 
-    def create(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
-        """
-        Create a kernel resource in Kubernetes.
+    def create(
+        self, request: CreateKernelRequest, timeout: int = None, **kwargs
+    ) -> KernelSchema:
+        """Create a kernel resource in Kubernetes.
 
         Args:
             request (CreateKernelRequest): The request object containing kernel creation parameters.
+            timeout (int, optional): Timeout in seconds for kernel creation. Defaults to None.
 
         Returns:
             KernelSchema: The created kernel's connection information.
@@ -77,6 +79,8 @@ class JupyterKernelClient:
             KernelCreationForbiddenError: If kernel creation is forbidden by Kubernetes.
             RuntimeError: For other errors during kernel creation.
         """
+        timeout = timeout or self.timeout
+
         env = request.env
         logger.debug("Creating kernel with env: %s", env)
 
@@ -135,6 +139,7 @@ class JupyterKernelClient:
                 namespace=kernel_namespace,
                 plural=self.plural,
                 body=kernel,
+                _request_timeout=timeout,
                 **kwargs,
             )
             logger.debug("Kernel creation response: %s", response)
@@ -150,12 +155,14 @@ class JupyterKernelClient:
 
         return self.get(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-    async def acreate(self, request: CreateKernelRequest, **kwargs) -> KernelSchema:
-        """
-        Asynchronously create a kernel resource in Kubernetes.
+    async def acreate(
+        self, request: CreateKernelRequest, timeout: int = None, **kwargs
+    ) -> KernelSchema:
+        """Asynchronously create a kernel resource in Kubernetes.
 
         Args:
             request (CreateKernelRequest): The request object containing kernel creation parameters.
+            timeout (int, optional): Timeout in seconds for kernel creation. Defaults to None.
 
         Returns:
             KernelSchema: The created kernel's connection information.
@@ -165,6 +172,8 @@ class JupyterKernelClient:
             KernelCreationForbiddenError: If kernel creation is forbidden by Kubernetes.
             RuntimeError: For other errors during kernel creation.
         """
+        timeout = timeout or self.timeout
+
         env = request.env
         logger.debug("Asynchronously creating kernel with env: %s", env)
 
@@ -221,6 +230,7 @@ class JupyterKernelClient:
                 plural=self.plural,
                 body=kernel,
                 async_req=True,
+                _request_timeout=timeout,
                 **kwargs,
             )
             logger.debug("Asynchronous kernel creation response: %s", response.get())
@@ -236,13 +246,15 @@ class JupyterKernelClient:
 
         return await self.aget(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-    def get(self, name: str, namespace: str = "default", **kwargs) -> KernelSchema:
-        """
-        Get kernel connection information by name and namespace.
+    def get(
+        self, name: str, namespace: str = "default", timeout: int = None, **kwargs
+    ) -> KernelSchema:
+        """Get kernel connection information by name and namespace.
 
         Args:
             name (str): Kernel name.
             namespace (str, optional): Kernel namespace. Defaults to "default".
+            timeout (int, optional): Timeout in seconds for getting the kernel. Defaults to None.
 
         Returns:
             KernelSchema: The kernel's connection information.
@@ -250,6 +262,8 @@ class JupyterKernelClient:
         Raises:
             RuntimeError: If kernel creation timed out or if there is an error getting the kernel.
         """
+        timeout = timeout or self.timeout
+
         try:
             kernel = self.api_instance.get_namespaced_custom_object(
                 group=self.group,
@@ -257,6 +271,7 @@ class JupyterKernelClient:
                 namespace=namespace,
                 plural=self.plural,
                 name=name,
+                _request_timeout=timeout,
                 **kwargs,
             )
         except ApiException as e:
@@ -279,14 +294,14 @@ class JupyterKernelClient:
         raise RuntimeError(error_msg)
 
     async def aget(
-        self, name: str, namespace: str = "default", **kwargs
+        self, name: str, namespace: str = "default", timeout: int = None, **kwargs
     ) -> KernelSchema:
-        """
-        Asynchronously get kernel connection information by name and namespace.
+        """Asynchronously get kernel connection information by name and namespace.
 
         Args:
             name (str): Kernel name.
             namespace (str, optional): Kernel namespace. Defaults to "default".
+            timeout (int, optional): Timeout in seconds for getting the kernel. Defaults to None.
 
         Returns:
             KernelSchema: The kernel's connection information.
@@ -294,6 +309,8 @@ class JupyterKernelClient:
         Raises:
             RuntimeError: If kernel creation timed out or if there is an error getting the kernel.
         """
+        timeout = timeout or self.timeout
+
         try:
             response = self.api_instance.get_namespaced_custom_object(
                 group=self.group,
@@ -302,6 +319,7 @@ class JupyterKernelClient:
                 plural=self.plural,
                 name=name,
                 async_req=True,
+                _request_timeout=timeout,
                 **kwargs,
             )
             kernel = response.get()
@@ -324,17 +342,21 @@ class JupyterKernelClient:
         error_msg = f"Kernel launch timeout. Waited too long ({self.timeout}) to get connection info."
         raise RuntimeError(error_msg)
 
-    def delete(self, name: str, namespace: str = "default", **kwargs) -> None:
-        """
-        Delete a kernel resource by name and namespace.
+    def delete(
+        self, name: str, namespace: str = "default", timeout: int = None, **kwargs
+    ) -> None:
+        """Delete a kernel resource by name and namespace.
 
         Args:
             name (str): Kernel name.
             namespace (str, optional): Kernel namespace. Defaults to "default".
+            timeout (int, optional): Timeout in seconds for deteting the kernel. Defaults to None.
 
         Raises:
             RuntimeError: For errors during kernel deletion.
         """
+        timeout = timeout or self.timeout
+
         try:
             self.api_instance.delete_namespaced_custom_object(
                 group=self.group,
@@ -342,6 +364,7 @@ class JupyterKernelClient:
                 namespace=namespace,
                 plural=self.plural,
                 name=name,
+                _request_timeout=timeout,
                 **kwargs,
             )
             logger.debug("Kernel %s deleted successfully", name)
@@ -352,17 +375,21 @@ class JupyterKernelClient:
             error_msg = f"Error deleting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-    async def adelete(self, name: str, namespace: str = "default", **kwargs) -> None:
-        """
-        Asynchronously delete a kernel resource by name and namespace.
+    async def adelete(
+        self, name: str, namespace: str = "default", timeout: int = None, **kwargs
+    ) -> None:
+        """Asynchronously delete a kernel resource by name and namespace.
 
         Args:
             name (str): Kernel name.
             namespace (str, optional): Kernel namespace. Defaults to "default".
+            timeout (int, optional): Timeout in seconds for deteting the kernel. Defaults to None.
 
         Raises:
             RuntimeError: For errors during kernel deletion.
         """
+        timeout = timeout or self.timeout
+
         try:
             self.api_instance.delete_namespaced_custom_object(
                 group=self.group,
@@ -371,6 +398,7 @@ class JupyterKernelClient:
                 plural=self.plural,
                 name=name,
                 async_req=True,
+                _request_timeout=timeout,
                 **kwargs,
             )
             logger.debug("Asynchronously deleted kernel %s", name)
@@ -381,16 +409,19 @@ class JupyterKernelClient:
             error_msg = f"Error deleting kernel: {e.status}\n{e.reason}"
             raise RuntimeError(error_msg)
 
-    def delete_by_kernel_id(self, kerenl_id: str, **kwargs) -> None:
-        """
-        Delete a kernel resource by kerenl_id.
+    def delete_by_kernel_id(
+        self, kerenl_id: str, timeout: int = None, **kwargs
+    ) -> None:
+        """Delete a kernel resource by kerenl_id.
 
         Args:
             kerenl_id (str): Kernel id.
+            timeout (int, optional): Timeout in seconds for deteting the kernel. Defaults to None.
 
         Raises:
             RuntimeError: For errors during kernel deletion.
         """
+        timeout = timeout or self.timeout
 
         label_selector = f"{KERNEL_ID}={kerenl_id}"
         kernels = self.api_instance.list_cluster_custom_object(
@@ -406,16 +437,20 @@ class JupyterKernelClient:
             kernel_namespace = items[0]["metadata"]["namespace"]
             self.delete(name=kernel_name, namespace=kernel_namespace, **kwargs)
 
-    async def adelete_by_kernel_id(self, kerenl_id: str, **kwargs) -> None:
+    async def adelete_by_kernel_id(
+        self, kerenl_id: str, timeout: int = None, **kwargs
+    ) -> None:
         """
         Asynchronously delete a kernel resource by name and namespace.
 
         Args:
             kerenl_id (str): Kernel id.
+            timeout (int, optional): Timeout in seconds for deteting the kernel. Defaults to None.
 
         Raises:
             RuntimeError: For errors during kernel deletion.
         """
+        timeout = timeout or self.timeout
 
         label_selector = f"{KERNEL_ID}={kerenl_id}"
         response = self.api_instance.list_cluster_custom_object(
@@ -424,6 +459,7 @@ class JupyterKernelClient:
             plural=self.plural,
             label_selector=label_selector,
             async_req=True,
+            _request_timeout=timeout,
             **kwargs,
         )
         kernels = response.get()

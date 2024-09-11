@@ -47,7 +47,22 @@ class JupyterKernelClient:
         kind: str = "Kernel",
         plural: str = "kernels",
         timeout: int = 60,
+        **kwargs,
     ) -> None:
+        """Initialize the Kernel client.
+
+        Args:
+            group (str, optional): kubernetes kernel cr group. Defaults to "jupyter.org".
+            version (str, optional): kubernetes kernel cr version. Defaults to "v1".
+            kind (str, optional): kubernetes kernel cr kind. Defaults to "Kernel".
+            plural (str, optional): kubernetes kernel cr plural. Defaults to "kernels".
+            timeout (int, optional): default timeout for kubernetes api calls. Defaults to 60.
+        """
+        if kwargs.pop("incluster", None):
+            logger.warning(
+                "`incluster` is deprecated, will be removed in a future version"
+            )
+
         try:
             config.load_incluster_config()
         except config.ConfigException:
